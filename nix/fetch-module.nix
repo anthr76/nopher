@@ -137,9 +137,25 @@ if githubSrc != null then
         subdir = if (lib.length pathParts) > 3
                  then lib.concatStringsSep "/" (lib.drop 3 pathParts)
                  else "";
+        subdirWithoutVersion = if subdir != "" then
+          let
+            parts = lib.splitString "/" subdir;
+            lastPart = lib.last parts;
+            # Check if last part is a version (v2, v3, etc.)
+            isVersion = lib.hasPrefix "v" lastPart && builtins.match "v[0-9]+" lastPart != null;
+          in
+            if isVersion && (lib.length parts) > 1
+            then lib.concatStringsSep "/" (lib.init parts)
+            else subdir
+          else "";
       in
         if subdir != "" then ''
-          if [ -d "${subdir}" ]; then
+          # Try with version suffix stripped first
+          if [ -d "${subdirWithoutVersion}" ] && [ "${subdirWithoutVersion}" != "${subdir}" ]; then
+            shopt -s dotglob
+            cp -r ${subdirWithoutVersion}/* $out/
+            shopt -u dotglob
+          elif [ -d "${subdir}" ]; then
             shopt -s dotglob
             cp -r ${subdir}/* $out/
             shopt -u dotglob
