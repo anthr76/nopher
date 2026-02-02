@@ -1,9 +1,31 @@
 schema: 1
 go: 1.25.6
 modules:
+    github.com/git-lfs/go-netrc:
+        version: v0.0.0-20250218165306-ba0029b43d11
+        hash: sha256-iEcdiiW23IYy1GEKFLe6Rwi2HjdeXTjJP9VMla7XAxE=
+        url: https://proxy.golang.org/github.com/git-lfs/go-netrc/@v/v0.0.0-20250218165306-ba0029b43d11.zip
+        rev: ba0029b43d1190baf66986a87418593ed1a07f42
+    github.com/inconshreveable/mousetrap:
+        version: v1.1.0
+        hash: sha256-UmZ03mJNfbEIz+dlPvEQzN/Ze8hQJiVCJIFVZ5KO0kM=
+        url: https://proxy.golang.org/github.com/inconshreveable/mousetrap/@v/v1.1.0.zip
+        rev: 4e8053ee7ef85a6bd26368364a6d27f1641c1d21
+    github.com/spf13/cobra:
+        version: v1.10.2
+        hash: sha256-oAqub81jHg/eUsmGBEUv9w4bc8O4pWDWjbFa/14mhy0=
+        url: https://proxy.golang.org/github.com/spf13/cobra/@v/v1.10.2.zip
+        rev: 88b30ab89da2d0d0abb153818746c5a2d30eccec
+    github.com/spf13/pflag:
+        version: v1.0.9
+        hash: sha256-g5EBiNhzX4SkioCreDUe2sC1aYlvKzokTGlqB9qape0=
+        url: https://proxy.golang.org/github.com/spf13/pflag/@v/v1.0.9.zip
+        rev: 10438578954bba2527fe5cae3684d4532b064bbe
     golang.org/x/mod:
         version: v0.32.0
         hash: sha256-wPzuLB7xoKgX6BBWNCvGy4sS0Rvhrd/juodDSi4wRM8=
+        url: https://proxy.golang.org/golang.org/x/mod/@v/v0.32.0.zip
     gopkg.in/yaml.v3:
         version: v3.0.1
         hash: sha256-qrj7xOYwDqCOav4crqGKIckMefSJ9SxT4vIEMfGpoBU=
+        url: https://proxy.golang.org/gopkg.in/yaml.v3/@v/v3.0.1.zip

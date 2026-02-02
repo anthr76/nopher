@@ -16,14 +16,20 @@ type Lockfile struct {
 type Module struct {
 	Version string `json:"version" yaml:"version"`
 	Hash    string `json:"hash" yaml:"hash"`
+	URL     string `json:"url,omitempty" yaml:"url,omitempty"`
+	Rev     string `json:"rev,omitempty" yaml:"rev,omitempty"`
 }
 
 // Replace represents a module replacement directive.
 type Replace struct {
 	// For remote replacements
-	New     string `json:"new,omitempty" yaml:"new,omitempty"`
-	Version string `json:"version,omitempty" yaml:"version,omitempty"`
-	Hash    string `json:"hash,omitempty" yaml:"hash,omitempty"`
+	Old        string `json:"old,omitempty" yaml:"old,omitempty"`               // Original module path (usually same as key)
+	OldVersion string `json:"oldVersion,omitempty" yaml:"oldVersion,omitempty"` // Original version from go.mod
+	New        string `json:"new,omitempty" yaml:"new,omitempty"`
+	Version    string `json:"version,omitempty" yaml:"version,omitempty"` // New version
+	Hash       string `json:"hash,omitempty" yaml:"hash,omitempty"`
+	URL        string `json:"url,omitempty" yaml:"url,omitempty"`
+	Rev        string `json:"rev,omitempty" yaml:"rev,omitempty"`
 
 	// For local replacements
 	Path string `json:"path,omitempty" yaml:"path,omitempty"`

@@ -8,7 +8,7 @@ import (
 )
 
 // ConvertGoH1ToSRI attempts to convert a Go h1: hash to SRI format.
-// Note: Go's h1: hash is SHA256 of the module zip, NOT the NAR hash.
+// Note: Go's h1: hash is SHA256 of the module zip, not the NAR hash.
 // This function is mainly for reference/validation, not for Nix hashes.
 func ConvertGoH1ToSRI(h1 string) (string, error) {
 	if !strings.HasPrefix(h1, "h1:") {

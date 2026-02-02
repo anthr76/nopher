@@ -17,23 +17,33 @@ Private repository authentication is handled during the **impure phase** (lockfi
 │  nopher generate                                                 │
 │    │                                                             │
 │    ├─► Public modules: fetch via proxy.golang.org                │
+│    │   • Store URL and git rev in lockfile                       │
 │    │                                                             │
 │    └─► Private modules (GOPRIVATE):                              │
 │          • Read ~/.netrc for credentials                         │
-│          • Fetch directly from source                            │
-│          • Compute hash for lockfile                             │
+│          • Fetch directly from source (GitHub/BSR/etc)           │
+│          • Call `go list -m -json` for full git commit hash      │
+│          • Compute SRI hash for lockfile                         │
+│          • Store URL and full 40-char rev in lockfile            │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                     PURE PHASE (no auth needed)                  │
+│                     PURE PHASE (uses netrc)                      │
 │                                                                  │
 │  nix build                                                       │
 │    │                                                             │
-│    └─► All modules fetched via proxy.golang.org                  │
-│        (private modules must be available via proxy or           │
-│         the lockfile provides the direct download hash)          │
+│    ├─► GitHub modules: builtins.fetchGit                         │
+│    │   • Uses rev field from lockfile                            │
+│    │   • Authenticates via netrc configured in /etc/nix/nix.conf │
+│    │   • Supports private repositories                           │
+│    │                                                             │
+│    ├─► BSR modules: builtins.fetchurl                            │
+│    │   • Uses URL and hash from lockfile                         │
+│    │   • Authenticates via netrc-file setting                    │
+│    │                                                             │
+│    └─► Other modules: fetchurlBoot via proxy.golang.org          │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -92,7 +102,23 @@ machine buf.build
 chmod 600 ~/.netrc
 ```
 
-### 3. Generate the Lockfile
+### 3. Configure Nix netrc (for build phase)
+
+For the Nix build phase to access private repositories, configure `netrc-file` in `/etc/nix/nix.conf`:
+
+```
+netrc-file = /etc/nix/netrc
+```
+
+Or use a user-specific location:
+
+```
+netrc-file = /Users/yourname/.netrc
+```
+
+**Note:** This allows `builtins.fetchGit` and `builtins.fetchurl` to authenticate during builds. The netrc file must be readable by the nix-daemon.
+
+### 4. Generate the Lockfile
 
 ```bash
 nopher generate -v

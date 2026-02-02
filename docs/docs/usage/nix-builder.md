@@ -40,6 +40,7 @@ buildNopherGoApp {
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `go` | derivation | (from context) | Go compiler to use (override for newer versions) |
 | `CGO_ENABLED` | string | `"0"` | Enable/disable CGO |
 | `GOOS` | string | `null` | Target operating system |
 | `GOARCH` | string | `null` | Target architecture |
@@ -145,6 +146,22 @@ in {
   darwin-amd64 = buildFor "darwin" "amd64";
   darwin-arm64 = buildFor "darwin" "arm64";
   windows-amd64 = buildFor "windows" "amd64";
+}
+```
+
+### With Custom Go Version
+
+Use a specific or newer Go version:
+
+```nix
+{ buildNopherGoApp, go_1_25_latest }:
+
+buildNopherGoApp {
+  pname = "myapp";
+  version = "1.0.0";
+  src = ./.;
+  modules = ./nopher.lock.yaml;
+  go = go_1_25_latest;  # Override default Go version
 }
 ```
 

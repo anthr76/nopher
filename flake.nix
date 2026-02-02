@@ -11,8 +11,18 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Import nopher library
-        nopher = import ./nix/default.nix { inherit pkgs; };
+        # Import nopher library with explicit Go version
+        # Use latest Go 1.25.x available
+        nopher = import ./nix/default.nix {
+          inherit pkgs;
+          go = pkgs.go_1_25.overrideAttrs (oldAttrs: rec {
+            version = "1.25.6";
+            src = pkgs.fetchurl {
+              url = "https://go.dev/dl/go${version}.src.tar.gz";
+              hash = "sha256-WMv3ceRNdt5vVtGeM7d9dFoeSJNAkih15GWFuXXCsFk=";
+            };
+          });
+        };
 
         # Build nopher using buildNopherGoApp (dogfooding)
         nopherCli = nopher.buildNopherGoApp {

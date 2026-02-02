@@ -17,16 +17,22 @@ Nopher consists of two main components:
 
 ```shell
 cmd/nopher/
-└── main.go          # CLI entry point, command routing
+├── main.go          # CLI entry point
+└── cmd/
+    ├── root.go      # Root command setup
+    ├── generate.go  # Generate lockfile command
+    ├── verify.go    # Verify lockfile command
+    └── update.go    # Update single module command
 
 internal/
 ├── mod/
 │   └── parser.go    # go.mod and go.sum parsing
 ├── fetch/
-│   ├── module.go    # Module fetching via GOPROXY
-│   └── netrc.go     # .netrc credential parsing
+│   └── module.go    # Module fetching with multi-source support
+│                    # (proxy.golang.org, GitHub, BSR, go list)
 ├── hash/
-│   └── convert.go   # Hash computation and conversion
+│   ├── convert.go   # Hash computation and conversion
+│   └── nar.go       # NAR hash support
 └── lockfile/
     ├── schema.go    # Lockfile type definitions
     └── yaml.go      # YAML marshaling/unmarshaling
@@ -68,15 +74,20 @@ type Fetcher struct {
     Private  string   // GOPRIVATE patterns
     CacheDir string   // Local cache directory
     Netrc    *Netrc   // Authentication credentials
+    Verbose  bool     // Enable verbose output
 }
 ```
 
 The fetcher:
 
 1. Checks if module matches GOPRIVATE patterns
-2. For public modules: fetches from GOPROXY
-3. For private modules: fetches directly with netrc authentication
-4. Caches downloaded modules locally
+2. For public modules: fetches from GOPROXY (proxy.golang.org)
+3. For private GitHub modules:
+   - Calls `go list -m -json` to get full commit hash and accurate tag/ref
+   - Fetches from GitHub archive URLs with netrc authentication
+   - Stores both URL and full 40-char commit hash in lockfile
+4. For BSR modules: fetches with full module path in URL
+5. Caches downloaded modules, URLs, and git revs locally
 
 ### Hash Computation
 
@@ -141,10 +152,33 @@ fetchGoModule {
   modulePath = "github.com/sirupsen/logrus";
   version = "v1.9.3";
   hash = "sha256-E5GnOMrWPCJLof4UFRJ9sLQKLpALbstsrqHmnWpnn5w=";
+  url = "https://github.com/sirupsen/logrus/archive/refs/tags/v1.9.3.zip";  # Optional
+  rev = "3d4380f53a34dcdc95f0c1db702615992b38d9a4";  # Optional
 }
 ```
 
-Internally uses `fetchurl` to download from `proxy.golang.org`.
+**Fetching Strategy:**
+
+The `fetchGoModule` function intelligently selects the fetching method based on module type:
+
+- **GitHub modules with full `rev`**: Uses `builtins.fetchGit`
+  - Authenticates via netrc configured in `/etc/nix/nix.conf` (netrc-file setting)
+  - Works in pure evaluation mode with full 40-character commit hash
+  - Supports multi-module repositories (extracts subdirectories)
+  - Example: Private GitHub repos, forks, submodules
+
+- **GitHub modules without full `rev`**: Falls back to `fetchurlBoot`
+  - Used when rev is missing or truncated
+  - Downloads from proxy.golang.org or GitHub archive URL
+
+- **BSR modules**: Uses `builtins.fetchurl`
+  - Authenticates via netrc-file setting in nix.conf
+  - Constructs URLs with full module path
+  - Example: `https://bsr.host.com/gen/go/bsr.host.com/gen/go/org/repo/@v/version.zip`
+
+- **Other modules**: Uses `fetchurlBoot`
+  - Downloads from proxy.golang.org
+  - Standard public Go modules
 
 ### Vendor Directory Assembly
 
@@ -156,16 +190,25 @@ vendorDir = stdenv.mkDerivation {
   installPhase = ''
     mkdir -p $out
     # Symlink each fetched module
+    # For modules with children (e.g., github.com/aws/aws-sdk-go-v2 and
+    # github.com/aws/aws-sdk-go-v2/config), copy the parent instead of
+    # symlinking to avoid permission issues
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList (path: drv: ''
       mkdir -p $out/${dirOf path}
       ln -s ${drv} $out/${path}
     '') fetchedModules)}
 
-    # Generate modules.txt
+    # Generate modules.txt with replace directives
+    # Format: # original@version => replacement@version
     # ...
   '';
 };
 ```
+
+**Nested Module Handling:**
+- Detects parent-child module relationships (e.g., `aws/sdk` and `aws/sdk/config`)
+- Parent modules are copied (not symlinked) to allow child symlinks
+- Ensures permissions are correct for nested structures
 
 ### modules.txt Generation
 
@@ -176,13 +219,20 @@ Go's vendor mode requires `vendor/modules.txt`:
 ## explicit; go 1.22
 github.com/sirupsen/logrus
 github.com/sirupsen/logrus/hooks/syslog
+
+# sigs.k8s.io/controller-runtime v0.23.0 => sigs.k8s.io/controller-runtime v0.22.4
+## explicit; go 1.22
+sigs.k8s.io/controller-runtime
+sigs.k8s.io/controller-runtime/pkg/client
 ```
 
 Key points:
 
 - `## explicit` marks the module as explicitly required
 - `; go X.Y` sets the language version (prevents go1.16 default)
-- Package paths are discovered by scanning for `.go` files
+- Replace directives show `original@version => replacement@version`
+- Original version comes from `oldVersion` field in lockfile
+- Package paths are discovered by scanning for `.go` files in each module
 
 ## Design Decisions
 
@@ -219,15 +269,19 @@ Key points:
 ## Caching Strategy
 
 ```shell
-~/.cache/nopher/
+~/.cache/nopher/  (or ~/Library/Caches/nopher on macOS)
 ├── github.com%2Fsirupsen%2Flogrus@v1.9.3/    # Extracted module
-├── github.com%2Fsirupsen%2Flogrus@v1.9.3.hash # Cached hash
+├── github.com%2Fsirupsen%2Flogrus@v1.9.3.hash # Cached SRI hash
+├── github.com%2Fsirupsen%2Flogrus@v1.9.3.url  # Cached source URL
+├── github.com%2Fsirupsen%2Flogrus@v1.9.3.rev  # Cached git commit hash
 └── ...
 ```
 
 - Modules are cached after first fetch
-- Hash is cached alongside module
-- Cache can be cleared: `rm -rf ~/.cache/nopher`
+- Hash, URL, and git rev are cached alongside module
+- Speeds up lockfile regeneration for unchanged dependencies
+- Cache location: `~/.cache/nopher` (Linux) or `~/Library/Caches/nopher` (macOS)
+- Cache can be cleared: `rm -rf ~/.cache/nopher` or `rm -rf ~/Library/Caches/nopher`
 
 ## Error Handling
 

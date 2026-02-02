@@ -20,11 +20,18 @@
 , fetchGoModule
 }:
 
+let
+  # Preserve the default go from outer scope
+  defaultGo = go;
+in
+
 { pname
 , version
 , src
 , # Path to nopher.lock.yaml
   modules
+, # Go compiler (optional override)
+  go ? defaultGo
 , # Build options
   ldflags ? [ ]
 , tags ? [ ]
@@ -60,11 +67,15 @@ let
   # Fetch each module
   fetchedModules = lib.mapAttrs
     (path: info:
-      fetchGoModule {
+      fetchGoModule ({
         modulePath = path;
         version = info.version;
         hash = info.hash;
-      })
+      } // lib.optionalAttrs (info ? url) {
+        url = info.url;
+      } // lib.optionalAttrs (info ? rev) {
+        rev = info.rev;
+      }))
     (lockfileJson.modules or { });
 
   # Fetch replacement modules
@@ -81,6 +92,12 @@ let
         })
     (lockfileJson.replace or { });
 
+  # Determine which module paths have children
+  # A path has children if another path starts with "path/"
+  modulePathsWithChildren = lib.filter
+    (path: lib.any (other: other != path && lib.hasPrefix (path + "/") other) (lib.attrNames fetchedModules))
+    (lib.attrNames fetchedModules);
+
   # Build the vendor directory
   vendorDir = stdenv.mkDerivation {
     name = "${pname}-vendor";
@@ -92,10 +109,36 @@ let
       mkdir -p $out
 
       # Link regular modules
-      ${lib.concatStringsSep "\n" (lib.mapAttrsToList (path: drv: ''
-        mkdir -p $out/${nopherLib.dirOf path}
-        ln -s ${drv} $out/${path}
-      '') fetchedModules)}
+      # For modules with children, copy instead of symlink
+      ${lib.concatStringsSep "\n" (lib.mapAttrsToList (path: drv:
+        if lib.elem path modulePathsWithChildren then ''
+          # This module has children, so copy it instead of symlinking
+          parent="${nopherLib.dirOf path}"
+          if [ "$parent" != "." ]; then
+            mkdir -p "$out/$parent"
+          fi
+          mkdir -p "$out/${path}"
+          cp -r ${drv}/* "$out/${path}/"
+          chmod -R +w "$out/${path}"
+        '' else ''
+          # Leaf module, safe to symlink
+          parent="${nopherLib.dirOf path}"
+          # Ensure parent exists as a real directory (not a symlink)
+          if [ "$parent" != "." ]; then
+            # If parent is a symlink, replace it with a real directory
+            while [ -L "$out/$parent" ] && [ -e "$out/$parent" ]; do
+              target=$(readlink -f "$out/$parent")
+              rm "$out/$parent"
+              mkdir -p "$out/$parent"
+              if [ -d "$target" ]; then
+                cp -r "$target"/* "$out/$parent/" 2>/dev/null || true
+              fi
+            done
+            mkdir -p "$out/$parent"
+          fi
+          ln -s ${drv} "$out/${path}"
+        ''
+      ) fetchedModules)}
 
       # Link replacement modules (non-local)
       ${lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: drv:
@@ -120,6 +163,24 @@ let
             echo "$pkg_path"
           done
         '') (lockfileJson.modules or {}))}
+
+        # Add replaced modules to modules.txt
+        # Format: # original-path original-version => replacement-path replacement-version
+        ${lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: replaceInfo:
+          if replaceInfo ? path then ""  # Skip local replacements
+          else
+            # Use oldVersion from lockfile, or fall back to looking up in modules
+            let origVersion = replaceInfo.oldVersion or (lockfileJson.modules.${origPath} or {}).version or "v0.0.0";
+            in ''
+              echo "# ${origPath} ${origVersion} => ${replaceInfo.new} ${replaceInfo.version}"
+              echo "## explicit; go ${lockfileJson.go}"
+              # Find all Go packages in the replacement module
+              find -L $out/${origPath} -name '*.go' -print0 2>/dev/null | xargs -0 -n1 dirname 2>/dev/null | sort -u | while read -r pkg_dir; do
+                pkg_path="''${pkg_dir#$out/}"
+                echo "$pkg_path"
+              done
+            ''
+        ) (lockfileJson.replace or {}))}
       } > $out/modules.txt
     '';
   };
@@ -127,12 +188,16 @@ let
   # Build local replace paths for linking
   localReplaces = lib.filterAttrs (path: info: info ? path) (lockfileJson.replace or { });
 
+  # Use provided go compiler
+  goCompiler = go;
+
   # Remove our custom attributes before passing to mkDerivation
   extraArgs = builtins.removeAttrs args [
     "pname"
     "version"
     "src"
     "modules"
+    "go"
     "ldflags"
     "tags"
     "subPackages"
@@ -149,7 +214,7 @@ in
 stdenv.mkDerivation (extraArgs // {
   inherit pname version src;
 
-  nativeBuildInputs = [ go ] ++ (args.nativeBuildInputs or [ ]);
+  nativeBuildInputs = [ goCompiler ] ++ (args.nativeBuildInputs or [ ]);
 
   configurePhase = ''
     runHook preConfigure

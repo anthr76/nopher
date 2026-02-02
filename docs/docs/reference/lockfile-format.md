@@ -60,6 +60,8 @@ modules:
   github.com/sirupsen/logrus:
     version: v1.9.3
     hash: sha256-E5GnOMrWPCJLof4UFRJ9sLQKLpALbstsrqHmnWpnn5w=
+    url: https://github.com/sirupsen/logrus/archive/refs/tags/v1.9.3.zip
+    rev: 3d4380f53a34dcdc95f0c1db702615992b38d9a4
   golang.org/x/sys:
     version: v0.15.0
     hash: sha256-abc123def456...=
@@ -67,10 +69,14 @@ modules:
 
 #### Module Entry Fields
 
-| Field     | Type   | Description                                         |
-|-----------|--------|-----------------------------------------------------|
-| `version` | string | Semantic version (e.g., `v1.2.3`) or pseudo-version |
-| `hash`    | string | SRI hash of the module zip file                     |
+| Field     | Type   | Required | Description                                         |
+|-----------|--------|----------|-----------------------------------------------------|
+| `version` | string | Yes      | Semantic version (e.g., `v1.2.3`) or pseudo-version |
+| `hash`    | string | Yes      | SRI hash of the module zip file                     |
+| `url`     | string | No       | Direct download URL (used for GitHub fetchGit)      |
+| `rev`     | string | No       | Git commit hash for reproducible fetchGit builds    |
+
+**Note:** The `url` and `rev` fields are automatically populated for GitHub modules and used by Nix's `fetchGit` to enable netrc authentication for private repositories.
 
 ### `replace`
 
@@ -85,11 +91,28 @@ When one module is replaced with another remote module:
 
 ```yaml
 replace:
-  github.com/old/module:
-    new: github.com/new/module
-    version: v2.0.0
+  sigs.k8s.io/controller-runtime:
+    old: sigs.k8s.io/controller-runtime
+    oldVersion: v0.23.0
+    new: sigs.k8s.io/controller-runtime
+    version: v0.22.4
     hash: sha256-xyz789...=
+    url: https://proxy.golang.org/sigs.k8s.io/controller-runtime/@v/v0.22.4.zip
 ```
+
+#### Remote Replacement Fields
+
+| Field        | Type   | Required | Description                                    |
+|--------------|--------|----------|------------------------------------------------|
+| `old`        | string | No       | Original module path (usually same as key)     |
+| `oldVersion` | string | No       | Original version being replaced from go.mod    |
+| `new`        | string | Yes      | Replacement module path                        |
+| `version`    | string | Yes      | Replacement module version                     |
+| `hash`       | string | Yes      | SRI hash of the replacement module zip         |
+| `url`        | string | No       | Direct download URL (for GitHub modules)       |
+| `rev`        | string | No       | Git commit hash (for GitHub fetchGit)          |
+
+**Note:** The `old` and `oldVersion` fields are used to generate correct `vendor/modules.txt` format that Go expects.
 
 #### Local Replacement
 
@@ -142,6 +165,8 @@ modules:
   github.com/myorg/internal-lib:
     version: v0.5.2
     hash: sha256-abc123def456ghi789...=
+    url: https://github.com/myorg/internal-lib/archive/refs/tags/v0.5.2.zip
+    rev: def456abc123...
 
 replace:
   # Fork replacement
