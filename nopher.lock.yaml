@@ -1,0 +1,9 @@
+schema: 1
+go: 1.25.6
+modules:
+    golang.org/x/mod:
+        version: v0.32.0
+        hash: sha256-wPzuLB7xoKgX6BBWNCvGy4sS0Rvhrd/juodDSi4wRM8=
+    gopkg.in/yaml.v3:
+        version: v3.0.1
+        hash: sha256-qrj7xOYwDqCOav4crqGKIckMefSJ9SxT4vIEMfGpoBU=
