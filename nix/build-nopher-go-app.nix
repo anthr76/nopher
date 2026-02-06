@@ -18,6 +18,7 @@
 , go
 , yj
 , fetchGoModule
+, pkgs
 }:
 
 let
@@ -98,6 +99,16 @@ let
     (path: lib.any (other: other != path && lib.hasPrefix (path + "/") other) (lib.attrNames fetchedModules))
     (lib.attrNames fetchedModules);
 
+  # Build module path -> derivation mapping as JSON for runtime lookup
+  moduleMapping = builtins.toJSON (lib.mapAttrs (path: drv: {
+    store = "${drv}";
+    hasChildren = lib.elem path modulePathsWithChildren;
+  }) fetchedModules);
+
+  replaceMapping = builtins.toJSON (lib.mapAttrs (origPath: drv:
+    if drv != null then "${drv}" else null
+  ) fetchedReplaces);
+
   # Build the vendor directory
   vendorDir = stdenv.mkDerivation {
     name = "${pname}-vendor";
@@ -105,83 +116,79 @@ let
     dontUnpack = true;
     dontBuild = true;
 
+    passAsFile = [ "moduleMapping" "replaceMapping" ];
+    inherit moduleMapping replaceMapping;
+
+    nativeBuildInputs = [ pkgs.jq ];
+
     installPhase = ''
       mkdir -p $out
 
-      # Link regular modules
-      # For modules with children, copy instead of symlink
-      ${lib.concatStringsSep "\n" (lib.mapAttrsToList (path: drv:
-        if lib.elem path modulePathsWithChildren then ''
-          # This module has children, so copy it instead of symlinking
-          parent="${nopherLib.dirOf path}"
-          if [ "$parent" != "." ]; then
+      # Helper function to ensure parent directory exists
+      ensure_parent() {
+        local path="$1"
+        local parent=$(dirname "$path")
+        if [ "$parent" != "." ] && [ "$parent" != "$out" ]; then
+          while [ -L "$out/$parent" ] && [ -e "$out/$parent" ]; do
+            local target=$(readlink -f "$out/$parent")
+            rm "$out/$parent"
             mkdir -p "$out/$parent"
-          fi
-          mkdir -p "$out/${path}"
-          cp -r ${drv}/* "$out/${path}/"
-          chmod -R +w "$out/${path}"
-        '' else ''
-          # Leaf module, safe to symlink
-          parent="${nopherLib.dirOf path}"
-          # Ensure parent exists as a real directory (not a symlink)
-          if [ "$parent" != "." ]; then
-            # If parent is a symlink, replace it with a real directory
-            while [ -L "$out/$parent" ] && [ -e "$out/$parent" ]; do
-              target=$(readlink -f "$out/$parent")
-              rm "$out/$parent"
-              mkdir -p "$out/$parent"
-              if [ -d "$target" ]; then
-                cp -r "$target"/* "$out/$parent/" 2>/dev/null || true
-              fi
-            done
-            mkdir -p "$out/$parent"
-          fi
-          ln -s ${drv} "$out/${path}"
-        ''
-      ) fetchedModules)}
-
-      # Link replacement modules (non-local)
-      ${lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: drv:
-        if drv != null then ''
-          mkdir -p $out/${nopherLib.dirOf origPath}
-          # Remove existing link if any (from regular modules)
-          rm -f $out/${origPath}
-          ln -s ${drv} $out/${origPath}
-        '' else ""
-      ) fetchedReplaces)}
-
-      # Create modules.txt for Go's vendor detection
-      # Need to scan each module directory for all packages
-      # Include go version so modules don't default to go1.16
-      {
-        ${lib.concatStringsSep "\n" (lib.mapAttrsToList (path: info: ''
-          echo "# ${path} ${info.version}"
-          echo "## explicit; go ${lockfileJson.go}"
-          # Find all Go packages in this module (follow symlinks)
-          find -L $out/${path} -name '*.go' -print0 2>/dev/null | xargs -0 -n1 dirname 2>/dev/null | sort -u | while read -r pkg_dir; do
-            pkg_path="''${pkg_dir#$out/}"
-            echo "$pkg_path"
+            if [ -d "$target" ]; then
+              cp -r "$target"/* "$out/$parent/" 2>/dev/null || true
+            fi
           done
-        '') (lockfileJson.modules or {}))}
+          mkdir -p "$out/$parent"
+        fi
+      }
 
-        # Add replaced modules to modules.txt
-        # Format: # original-path original-version => replacement-path replacement-version
-        ${lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: replaceInfo:
-          if replaceInfo ? path then ""  # Skip local replacements
-          else
-            # Use oldVersion from lockfile, or fall back to looking up in modules
-            let origVersion = replaceInfo.oldVersion or (lockfileJson.modules.${origPath} or {}).version or "v0.0.0";
-            in ''
-              echo "# ${origPath} ${origVersion} => ${replaceInfo.new} ${replaceInfo.version}"
-              echo "## explicit; go ${lockfileJson.go}"
-              # Find all Go packages in the replacement module
-              find -L $out/${origPath} -name '*.go' -print0 2>/dev/null | xargs -0 -n1 dirname 2>/dev/null | sort -u | while read -r pkg_dir; do
-                pkg_path="''${pkg_dir#$out/}"
-                echo "$pkg_path"
-              done
-            ''
-        ) (lockfileJson.replace or {}))}
-      } > $out/modules.txt
+      # Process modules from JSON mapping
+      jq -r 'to_entries[] | "\(.key)|\(.value.store)|\(.value.hasChildren)"' < "$moduleMappingPath" | while IFS='|' read -r path store hasChildren; do
+        parent=$(dirname "$out/$path")
+        mkdir -p "$parent"
+
+        if [ "$hasChildren" = "true" ]; then
+          cp -r "$store" "$out/$path"
+          chmod -R +w "$out/$path"
+        else
+          ln -s "$store" "$out/$path"
+        fi
+      done
+
+      # Process replacements from JSON mapping
+      jq -r 'to_entries[] | select(.value != null) | "\(.key)|\(.value)"' < "$replaceMappingPath" | while IFS='|' read -r origPath store; do
+        mkdir -p "$out/$(dirname "$origPath")"
+        rm -f "$out/$origPath"
+        ln -s "$store" "$out/$origPath"
+      done
+
+      # Create modules.txt using a helper script
+      # Generate modules.txt from the vendored modules
+      bash ${builtins.toFile "gen-modules-txt.sh" (''
+        #!/bin/bash
+        set -e
+        (
+      '' + lib.concatStringsSep "\n" (lib.mapAttrsToList (path: info: ''
+        echo "# ${path} ${info.version}"
+        echo "## explicit; go ${lockfileJson.go}"
+        find -L "$out/${path}" -name '*.go' -print0 2>/dev/null | xargs -0 -n1 dirname 2>/dev/null | sort -u | while read -r pkg_dir; do
+          pkg_path="''${pkg_dir#$out/}"
+          echo "$pkg_path"
+        done
+      '') (lockfileJson.modules or {})) + "\n" + lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: replaceInfo:
+        if replaceInfo ? path then ""
+        else
+          let origVersion = replaceInfo.oldVersion or (lockfileJson.modules.${origPath} or {}).version or "v0.0.0";
+          in ''
+            echo "# ${origPath} ${origVersion} => ${replaceInfo.new} ${replaceInfo.version}"
+            echo "## explicit; go ${lockfileJson.go}"
+            find -L "$out/${origPath}" -name '*.go' -print0 2>/dev/null | xargs -0 -n1 dirname 2>/dev/null | sort -u | while read -r pkg_dir; do
+              pkg_path="''${pkg_dir#$out/}"
+              echo "$pkg_path"
+            done
+          ''
+      ) (lockfileJson.replace or {})) + ''
+        ) > "$out/modules.txt"
+      '')}
     '';
   };
 
