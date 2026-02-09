@@ -181,7 +181,9 @@ let
       ) (lockfileJson.modules or{})) + "\n" + lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: replaceInfo:
         if replaceInfo ? path then ""
         else
-          let origVersion = replaceInfo.oldVersion or (lockfileJson.modules.${origPath} or {}).version or "v0.0.0";
+          let
+            origVersion = replaceInfo.oldVersion or (lockfileJson.modules.${origPath} or {}).version or "v0.0.0";
+            needsMarker = origPath != replaceInfo.new;
           in ''
             echo "# ${origPath} ${origVersion} => ${replaceInfo.new} ${replaceInfo.version}"
             echo "## explicit; go ${lockfileJson.go}"
@@ -189,6 +191,7 @@ let
               pkg_path="''${pkg_dir#$out/}"
               echo "$pkg_path"
             done
+          '' + lib.optionalString needsMarker ''
             echo "# ${origPath} => ${replaceInfo.new} ${replaceInfo.version}"
           ''
       ) (lockfileJson.replace or {})) + ''
