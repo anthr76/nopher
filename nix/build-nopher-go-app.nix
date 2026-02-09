@@ -167,14 +167,18 @@ let
         #!/bin/bash
         set -e
         (
-      '' + lib.concatStringsSep "\n" (lib.mapAttrsToList (path: info: ''
-        echo "# ${path} ${info.version}"
-        echo "## explicit; go ${lockfileJson.go}"
-        find -L "$out/${path}" -name '*.go' -print0 2>/dev/null | xargs -0 -n1 dirname 2>/dev/null | sort -u | while read -r pkg_dir; do
-          pkg_path="''${pkg_dir#$out/}"
-          echo "$pkg_path"
-        done
-      '') (lockfileJson.modules or {})) + "\n" + lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: replaceInfo:
+      '' + lib.concatStringsSep "\n" (lib.mapAttrsToList (path: info:
+        if (lockfileJson.replace or {}) ? ${path} then
+          ""
+        else ''
+          echo "# ${path} ${info.version}"
+          echo "## explicit; go ${lockfileJson.go}"
+          find -L "$out/${path}" -name '*.go' -print0 2>/dev/null | xargs -0 -n1 dirname 2>/dev/null | sort -u | while read -r pkg_dir; do
+            pkg_path="''${pkg_dir#$out/}"
+            echo "$pkg_path"
+          done
+        ''
+      ) (lockfileJson.modules or{})) + "\n" + lib.concatStringsSep "\n" (lib.mapAttrsToList (origPath: replaceInfo:
         if replaceInfo ? path then ""
         else
           let origVersion = replaceInfo.oldVersion or (lockfileJson.modules.${origPath} or {}).version or "v0.0.0";
@@ -185,6 +189,7 @@ let
               pkg_path="''${pkg_dir#$out/}"
               echo "$pkg_path"
             done
+            echo "# ${origPath} => ${replaceInfo.new} ${replaceInfo.version}"
           ''
       ) (lockfileJson.replace or {})) + ''
         ) > "$out/modules.txt"

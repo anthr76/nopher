@@ -4,9 +4,11 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    nix-unit.url = "github:nix-community/nix-unit";
+    nix-unit.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, nix-unit }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -41,14 +43,28 @@
           };
         };
 
+        tests = import ./nix/tests/default.nix { inherit pkgs; };
+
       in
       {
+        inherit tests;
+
         packages = {
           default = nopherCli;
           nopher = nopherCli;
         };
 
         lib = nopher;
+
+        checks = {
+          nix-unit = pkgs.runCommand "nix-unit-tests" {
+            nativeBuildInputs = [ nix-unit.packages.${system}.default ];
+          } ''
+            export HOME=$TMPDIR
+            nix-unit --flake ${self}#tests
+            touch $out
+          '';
+        };
 
         apps.default = {
           type = "app";

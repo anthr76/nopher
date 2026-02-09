@@ -90,10 +90,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 	fetcher.Verbose = generateVerbose
 
-	// Process replacements first
+	requireMap := make(map[string]string)
+	for _, req := range modInfo.Requires {
+		requireMap[req.Path] = req.Version
+	}
+
 	for _, rep := range modInfo.Replaces {
 		if rep.IsLocal {
-			// Local replacement
 			lf.Replace[rep.Old] = lockfile.Replace{
 				Path: rep.New,
 			}
@@ -101,7 +104,6 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "Local replace: %s -> %s\n", rep.Old, rep.New)
 			}
 		} else {
-			// Remote replacement
 			moduleVersion := rep.NewVersion
 			if generateVerbose {
 				fmt.Fprintf(os.Stderr, "Fetching replacement: %s@%s\n", rep.New, moduleVersion)
@@ -112,9 +114,14 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("fetching replacement %s@%s: %w", rep.New, moduleVersion, err)
 			}
 
+			oldVersion := rep.OldVersion
+			if oldVersion == "" {
+				oldVersion = requireMap[rep.Old]
+			}
+
 			lf.Replace[rep.Old] = lockfile.Replace{
 				Old:        rep.Old,
-				OldVersion: rep.OldVersion,
+				OldVersion: oldVersion,
 				New:        rep.New,
 				Version:    rep.NewVersion,
 				Hash:       result.Hash,
@@ -130,8 +137,15 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		modulePath := req.Path
 		moduleVersion := req.Version
 
-		// Skip if it's locally replaced
-		if rep, ok := lf.Replace[modulePath]; ok && rep.Path != "" {
+		// Skip if it's replaced (local or remote)
+		if rep, ok := lf.Replace[modulePath]; ok {
+			if generateVerbose {
+				if rep.Path != "" {
+					fmt.Fprintf(os.Stderr, "Skipping %s (locally replaced with %s)\n", modulePath, rep.Path)
+				} else {
+					fmt.Fprintf(os.Stderr, "Skipping %s (replaced with %s@%s)\n", modulePath, rep.New, rep.Version)
+				}
+			}
 			continue
 		}
 

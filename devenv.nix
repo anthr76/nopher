@@ -43,7 +43,8 @@ in
   # Pre-commit hooks
   git-hooks.hooks = {
     gofmt.enable = true;
-    govet.enable = true;
+    # TODO: Enable once Go 1.25.6 is available in nixpkgs
+    govet.enable = false;
   };
 
   # Scripts
