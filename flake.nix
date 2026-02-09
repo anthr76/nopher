@@ -11,21 +11,21 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Import nopher library with explicit Go version
-        # Use latest Go 1.25.x available
+        go_1_25_6 = pkgs.go_1_25.overrideAttrs (oldAttrs: rec {
+          version = "1.25.6";
+          src = pkgs.fetchurl {
+            url = "https://go.dev/dl/go${version}.src.tar.gz";
+            hash = "sha256-WMv3ceRNdt5vVtGeM7d9dFoeSJNAkih15GWFuXXCsFk=";
+          };
+        });
+
         nopher = import ./nix/default.nix {
           inherit pkgs;
-          go = pkgs.go_1_25.overrideAttrs (oldAttrs: rec {
-            version = "1.25.6";
-            src = pkgs.fetchurl {
-              url = "https://go.dev/dl/go${version}.src.tar.gz";
-              hash = "sha256-WMv3ceRNdt5vVtGeM7d9dFoeSJNAkih15GWFuXXCsFk=";
-            };
-          });
+          go = go_1_25_6;
         };
 
-        # Build nopher using buildNopherGoApp (dogfooding)
         nopherCli = nopher.buildNopherGoApp {
+          go = go_1_25_6;
           pname = "nopher";
           version = "0.1.0";
           src = ./.;
@@ -48,7 +48,6 @@
           nopher = nopherCli;
         };
 
-        # Export the nopher library for use in other flakes
         lib = nopher;
 
         apps.default = {
@@ -56,11 +55,9 @@
           program = "${nopherCli}/bin/nopher";
         };
 
-        # Overlay for use with nixpkgs
         overlays.default = import ./nix/overlay.nix;
       }
-    ) // {
-      # System-independent outputs
+    ) // { 
       overlays.default = import ./nix/overlay.nix;
     };
 }
