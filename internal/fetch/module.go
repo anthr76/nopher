@@ -388,10 +388,7 @@ func (f *Fetcher) getModuleInfoManual(modulePath, version string) (*ModuleInfo, 
 		if len(parts) >= 3 {
 			owner := parts[1]
 			repoName := parts[2]
-			subdir := ""
-			if len(parts) == 4 {
-				subdir = parts[3]
-			}
+			tagPrefix := moduleTagPrefix(modulePath)
 
 			info.Origin = &struct {
 				VCS    string
@@ -402,7 +399,7 @@ func (f *Fetcher) getModuleInfoManual(modulePath, version string) (*ModuleInfo, 
 			}{
 				VCS:    "git",
 				URL:    fmt.Sprintf("https://github.com/%s/%s", owner, repoName),
-				Subdir: subdir,
+				Subdir: tagPrefix,
 			}
 
 			if strings.HasPrefix(version, "v0.0.0-") {
@@ -412,8 +409,8 @@ func (f *Fetcher) getModuleInfoManual(modulePath, version string) (*ModuleInfo, 
 				}
 			} else {
 				tag := version
-				if subdir != "" {
-					tag = subdir + "/" + version
+				if tagPrefix != "" {
+					tag = tagPrefix + "/" + version
 				}
 				info.Origin.Ref = "refs/tags/" + tag
 			}
@@ -458,8 +455,8 @@ func (f *Fetcher) buildGitHubURL(modulePath, version string) string {
 		owner := parts[1]
 		repo := parts[2]
 		ref := version
-		if len(parts) == 4 {
-			ref = parts[3] + "/" + version
+		if prefix := moduleTagPrefix(modulePath); prefix != "" {
+			ref = prefix + "/" + version
 		}
 		if private {
 			return fmt.Sprintf("https://api.github.com/repos/%s/%s/zipball/%s", owner, repo, ref)
@@ -638,6 +635,47 @@ func escapePath(path string) string {
 // escapeVersion escapes a version for use in URLs.
 func escapeVersion(version string) string {
 	return url.PathEscape(version)
+}
+
+// moduleTagPrefix returns the git tag prefix for a Go module's subpath.
+// Go major version suffixes (/v2, /v3, etc.) are not part of the tag prefix.
+// For example:
+//   - "github.com/owner/repo/v3" → "" (major version suffix only)
+//   - "github.com/owner/repo/api/v1alpha1" → "api/v1alpha1" (true submodule)
+//   - "github.com/owner/repo/sub/v3" → "sub" (submodule with major version suffix)
+func moduleTagPrefix(modulePath string) string {
+	parts := strings.SplitN(modulePath, "/", 4)
+	if len(parts) < 4 {
+		return ""
+	}
+	suffix := parts[3]
+
+	if isMajorVersionSuffix(suffix) {
+		return ""
+	}
+
+	if idx := strings.LastIndex(suffix, "/"); idx != -1 {
+		if isMajorVersionSuffix(suffix[idx+1:]) {
+			return suffix[:idx]
+		}
+	}
+
+	return suffix
+}
+
+// isMajorVersionSuffix reports whether s is a Go major version suffix (v2, v3, ...).
+func isMajorVersionSuffix(s string) bool {
+	if len(s) < 2 || s[0] != 'v' {
+		return false
+	}
+	n := 0
+	for _, c := range s[1:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n >= 2
 }
 
 // extractHost gets the host part of a module path.

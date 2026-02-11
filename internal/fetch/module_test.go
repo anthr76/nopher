@@ -51,6 +51,24 @@ func TestGetModuleInfoFromGoList(t *testing.T) {
 			wantVCS:    "git",
 			wantURL:    "https://github.com/example/repo",
 		},
+		{
+			name:       "github major version suffix is not a subdir",
+			modulePath: "github.com/example/repo/v3",
+			version:    "v3.47.0",
+			wantOrigin: true,
+			wantRef:    "refs/tags/v3.47.0",
+			wantVCS:    "git",
+			wantURL:    "https://github.com/example/repo",
+		},
+		{
+			name:       "github submodule with major version suffix",
+			modulePath: "github.com/example/repo/api/v2",
+			version:    "v2.5.0",
+			wantOrigin: true,
+			wantRef:    "refs/tags/api/v2.5.0",
+			wantVCS:    "git",
+			wantURL:    "https://github.com/example/repo",
+		},
 	}
 
 	for _, tt := range tests {
@@ -325,6 +343,60 @@ func TestFullHashExtraction(t *testing.T) {
 				if hashLen != 40 {
 					t.Errorf("Hash length = %d, want 40 (full git commit hash). Got: %s", hashLen, info.Origin.Hash)
 				}
+			}
+		})
+	}
+}
+
+func TestModuleTagPrefix(t *testing.T) {
+	tests := []struct {
+		modulePath string
+		want       string
+	}{
+		{"github.com/owner/repo", ""},
+		{"github.com/owner/repo/v3", ""},
+		{"github.com/owner/repo/v2", ""},
+		{"github.com/owner/repo/v10", ""},
+		{"github.com/owner/repo/subpkg", "subpkg"},
+		{"github.com/owner/repo/api/v1alpha1", "api/v1alpha1"},
+		{"github.com/owner/repo/api/v2", "api"},
+		{"github.com/owner/repo/sub/module", "sub/module"},
+		{"github.com/owner/repo/v1", "v1"},
+		{"github.com/owner/repo/v0", "v0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modulePath, func(t *testing.T) {
+			got := moduleTagPrefix(tt.modulePath)
+			if got != tt.want {
+				t.Errorf("moduleTagPrefix(%q) = %q, want %q", tt.modulePath, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsMajorVersionSuffix(t *testing.T) {
+	tests := []struct {
+		s    string
+		want bool
+	}{
+		{"v2", true},
+		{"v3", true},
+		{"v10", true},
+		{"v1", false},
+		{"v0", false},
+		{"v1alpha1", false},
+		{"v2beta1", false},
+		{"api", false},
+		{"", false},
+		{"v", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.s, func(t *testing.T) {
+			got := isMajorVersionSuffix(tt.s)
+			if got != tt.want {
+				t.Errorf("isMajorVersionSuffix(%q) = %v, want %v", tt.s, got, tt.want)
 			}
 		})
 	}

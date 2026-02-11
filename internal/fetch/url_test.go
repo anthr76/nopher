@@ -67,6 +67,12 @@ func TestDirectURLWithOrigin(t *testing.T) {
 			wantPrefix: "https://github.com/example/repo/archive/refs/tags/sub/module/v1.0.0.zip",
 		},
 		{
+			name:       "github major version suffix is not a subdir",
+			modulePath: "github.com/example/repo/v3",
+			version:    "v3.47.0",
+			wantPrefix: "https://github.com/example/repo/archive/refs/tags/v3.47.0.zip",
+		},
+		{
 			name:       "github pseudo-version",
 			modulePath: "github.com/example/repo",
 			version:    "v0.0.0-20231201120000-abc123def456",
