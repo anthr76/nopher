@@ -22,12 +22,12 @@ func TestGetDownloadURL(t *testing.T) {
 			wantURL:    "https://proxy.golang.org/golang.org/x/mod/@v/v0.32.0.zip",
 		},
 		{
-			name:       "private module uses direct",
+			name:       "private module uses GitHub API",
 			proxy:      "https://proxy.golang.org",
 			private:    "github.com/myorg/*",
 			modulePath: "github.com/myorg/private",
 			version:    "v1.0.0",
-			wantURL:    "https://github.com/myorg/private/archive/refs/tags/v1.0.0.zip",
+			wantURL:    "https://api.github.com/repos/myorg/private/zipball/v1.0.0",
 		},
 		{
 			name:       "no proxy uses direct",
