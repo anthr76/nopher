@@ -187,6 +187,14 @@ func (f *Fetcher) Fetch(modulePath, version string) (*FetchResult, error) {
 		if err == nil && info != nil && info.Origin != nil {
 			gitRev = info.Origin.Hash
 		}
+
+		// Resolve full 40-char commit hash if missing or truncated.
+		// The Nix build requires a full rev for fetchGit in pure eval mode.
+		if len(gitRev) < 40 && info != nil && info.Origin != nil && info.Origin.URL != "" {
+			if resolved := resolveGitRev(info.Origin.URL+".git", info.Origin.Ref, gitRev); resolved != "" {
+				gitRev = resolved
+			}
+		}
 	}
 
 	if gitRev != "" {
@@ -645,6 +653,26 @@ func moduleTagPrefix(modulePath string) string {
 	}
 
 	return suffix
+}
+
+// resolveGitRev resolves a git ref or short hash to a full 40-character commit hash
+// using git ls-remote. This is needed because the Nix build (fetchGit) requires a full
+// rev for reproducible builds in pure evaluation mode.
+func resolveGitRev(repoURL, ref, shortRev string) string {
+	if ref != "" {
+		// Try dereferenced tag first (annotated tags point to tag objects, not commits)
+		if output, err := exec.Command("git", "ls-remote", repoURL, ref+"^{}").Output(); err == nil {
+			if fields := strings.Fields(strings.TrimSpace(string(output))); len(fields) >= 1 && len(fields[0]) == 40 {
+				return fields[0]
+			}
+		}
+		if output, err := exec.Command("git", "ls-remote", repoURL, ref).Output(); err == nil {
+			if fields := strings.Fields(strings.TrimSpace(string(output))); len(fields) >= 1 && len(fields[0]) == 40 {
+				return fields[0]
+			}
+		}
+	}
+	return ""
 }
 
 // archiveToAPIURL converts a GitHub archive URL to a GitHub API zipball URL.
