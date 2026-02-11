@@ -43,11 +43,11 @@ func TestGetModuleInfoFromGoList(t *testing.T) {
 			wantURL:    "https://go.googlesource.com/mod",
 		},
 		{
-			name:       "github submodule creates origin",
+			name:       "github submodule creates origin with subpath prefix",
 			modulePath: "github.com/example/repo/subpkg",
 			version:    "v1.0.0",
 			wantOrigin: true,
-			wantRef:    "refs/tags/v1.0.0",
+			wantRef:    "refs/tags/subpkg/v1.0.0",
 			wantVCS:    "git",
 			wantURL:    "https://github.com/example/repo",
 		},

@@ -64,7 +64,7 @@ func TestDirectURLWithOrigin(t *testing.T) {
 			name:       "github with submodule",
 			modulePath: "github.com/example/repo/sub/module",
 			version:    "v1.0.0",
-			wantPrefix: "https://github.com/example/repo/archive/refs/tags/v1.0.0.zip",
+			wantPrefix: "https://github.com/example/repo/archive/refs/tags/sub/module/v1.0.0.zip",
 		},
 		{
 			name:       "github pseudo-version",

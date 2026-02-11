@@ -388,6 +388,10 @@ func (f *Fetcher) getModuleInfoManual(modulePath, version string) (*ModuleInfo, 
 		if len(parts) >= 3 {
 			owner := parts[1]
 			repoName := parts[2]
+			subdir := ""
+			if len(parts) == 4 {
+				subdir = parts[3]
+			}
 
 			info.Origin = &struct {
 				VCS    string
@@ -396,8 +400,9 @@ func (f *Fetcher) getModuleInfoManual(modulePath, version string) (*ModuleInfo, 
 				Hash   string
 				Subdir string
 			}{
-				VCS: "git",
-				URL: fmt.Sprintf("https://github.com/%s/%s", owner, repoName),
+				VCS:    "git",
+				URL:    fmt.Sprintf("https://github.com/%s/%s", owner, repoName),
+				Subdir: subdir,
 			}
 
 			if strings.HasPrefix(version, "v0.0.0-") {
@@ -406,7 +411,11 @@ func (f *Fetcher) getModuleInfoManual(modulePath, version string) (*ModuleInfo, 
 					info.Origin.Hash = version[idx+1:]
 				}
 			} else {
-				info.Origin.Ref = "refs/tags/" + version
+				tag := version
+				if subdir != "" {
+					tag = subdir + "/" + version
+				}
+				info.Origin.Ref = "refs/tags/" + tag
 			}
 		}
 	}
@@ -448,10 +457,14 @@ func (f *Fetcher) buildGitHubURL(modulePath, version string) string {
 	if len(parts) >= 3 {
 		owner := parts[1]
 		repo := parts[2]
-		if private {
-			return fmt.Sprintf("https://api.github.com/repos/%s/%s/zipball/%s", owner, repo, version)
+		ref := version
+		if len(parts) == 4 {
+			ref = parts[3] + "/" + version
 		}
-		return fmt.Sprintf("https://github.com/%s/%s/archive/refs/tags/%s.zip", owner, repo, version)
+		if private {
+			return fmt.Sprintf("https://api.github.com/repos/%s/%s/zipball/%s", owner, repo, ref)
+		}
+		return fmt.Sprintf("https://github.com/%s/%s/archive/refs/tags/%s.zip", owner, repo, ref)
 	}
 
 	return f.buildGenericURL(modulePath, version)
@@ -499,21 +512,21 @@ func (f *Fetcher) buildGitHubArchiveURL(info *ModuleInfo, private bool) string {
 		if f.Verbose {
 			fmt.Fprintf(os.Stderr, "Using GitHub API for private repo %s ref %s\n", repoPath, ref)
 		}
-		return fmt.Sprintf("https://api.github.com/repos/%s/zipball/%s", repoPath, url.PathEscape(ref))
+		return fmt.Sprintf("https://api.github.com/repos/%s/zipball/%s", repoPath, ref)
 	}
 
 	if tag, found := strings.CutPrefix(info.Origin.Ref, "refs/tags/"); found {
 		if f.Verbose {
 			fmt.Fprintf(os.Stderr, "Using tag %s from module info\n", tag)
 		}
-		return fmt.Sprintf("https://github.com/%s/archive/refs/tags/%s.zip", repoPath, url.PathEscape(tag))
+		return fmt.Sprintf("https://github.com/%s/archive/refs/tags/%s.zip", repoPath, tag)
 	}
 
 	if branch, found := strings.CutPrefix(info.Origin.Ref, "refs/heads/"); found {
 		if f.Verbose {
 			fmt.Fprintf(os.Stderr, "Using branch %s from module info\n", branch)
 		}
-		return fmt.Sprintf("https://github.com/%s/archive/refs/heads/%s.zip", repoPath, url.PathEscape(branch))
+		return fmt.Sprintf("https://github.com/%s/archive/refs/heads/%s.zip", repoPath, branch)
 	}
 
 	if info.Origin.Hash != "" {
