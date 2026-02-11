@@ -267,17 +267,26 @@ func (f *Fetcher) getDownloadURL(modulePath, version string) string {
 }
 
 // downloadFromURL fetches a module zip file from the given URL.
-// For private modules, adds HTTP Basic Authentication from netrc if available.
+// For private GitHub modules, converts archive URLs to GitHub API URLs which
+// properly support token-based authentication. The archive URL is kept in the
+// lockfile so the Nix build can parse it for fetchGit.
 func (f *Fetcher) downloadFromURL(downloadURL, modulePath, version string) (string, error) {
+	actualURL := downloadURL
+	if f.isPrivate(modulePath) {
+		if apiURL := archiveToAPIURL(downloadURL); apiURL != "" {
+			actualURL = apiURL
+		}
+	}
+
 	if f.Verbose {
-		fmt.Fprintf(os.Stderr, "Downloading %s@%s from %s\n", modulePath, version, downloadURL)
+		fmt.Fprintf(os.Stderr, "Downloading %s@%s from %s\n", modulePath, version, actualURL)
 	}
 
 	var client http.Client
 
 	if f.isPrivate(modulePath) {
 		var machine *netrc.Machine
-		if u, err := url.Parse(downloadURL); err == nil {
+		if u, err := url.Parse(actualURL); err == nil {
 			machine = f.Netrc.FindMachine(u.Host, "")
 		}
 		if machine == nil {
@@ -294,7 +303,7 @@ func (f *Fetcher) downloadFromURL(downloadURL, modulePath, version string) (stri
 		}
 	}
 
-	req, err := http.NewRequest("GET", downloadURL, nil)
+	req, err := http.NewRequest("GET", actualURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("creating request: %w", err)
 	}
@@ -434,18 +443,16 @@ func (f *Fetcher) directURL(modulePath, version string) string {
 	return f.buildGenericURL(modulePath, version)
 }
 
-// buildGitHubURL constructs a GitHub download URL.
-// For private repos, uses the GitHub API (api.github.com) which properly supports token auth.
-// For public repos, uses archive download URLs.
+// buildGitHubURL constructs a GitHub archive download URL.
+// Always returns github.com/archive URLs so the Nix build can parse them for fetchGit.
 // Attempts to use Origin metadata for accurate refs/commits, falls back to tag-based URL.
 func (f *Fetcher) buildGitHubURL(modulePath, version string) string {
-	private := f.isPrivate(modulePath)
 	info := f.getGitHubModuleInfo(modulePath, version)
 
 	if info != nil && info.Origin != nil && info.Origin.VCS == "git" &&
 		strings.HasPrefix(info.Origin.URL, "https://github.com/") {
 
-		if archiveURL := f.buildGitHubArchiveURL(info, private); archiveURL != "" {
+		if archiveURL := f.buildGitHubArchiveURL(info); archiveURL != "" {
 			return archiveURL
 		}
 	}
@@ -457,9 +464,6 @@ func (f *Fetcher) buildGitHubURL(modulePath, version string) string {
 		ref := version
 		if prefix := moduleTagPrefix(modulePath); prefix != "" {
 			ref = prefix + "/" + version
-		}
-		if private {
-			return fmt.Sprintf("https://api.github.com/repos/%s/%s/zipball/%s", owner, repo, ref)
 		}
 		return fmt.Sprintf("https://github.com/%s/%s/archive/refs/tags/%s.zip", owner, repo, ref)
 	}
@@ -484,33 +488,13 @@ func (f *Fetcher) getGitHubModuleInfo(modulePath, version string) *ModuleInfo {
 	return info
 }
 
-// buildGitHubArchiveURL constructs a GitHub download URL from Origin metadata.
-// For private repos, uses the GitHub API (api.github.com/repos/{owner}/{repo}/zipball/{ref})
-// which properly supports token-based authentication via .netrc credentials.
-// For public repos, uses archive download URLs (github.com/{owner}/{repo}/archive/...).
+// buildGitHubArchiveURL constructs a GitHub archive download URL from Origin metadata.
+// Always returns github.com/archive URLs for the lockfile.
 // Handles tag refs (refs/tags/*), branch refs (refs/heads/*), and commit hashes.
 // Returns empty string if no valid ref or hash is found.
-func (f *Fetcher) buildGitHubArchiveURL(info *ModuleInfo, private bool) string {
+func (f *Fetcher) buildGitHubArchiveURL(info *ModuleInfo) string {
 	repoPath := strings.TrimPrefix(info.Origin.URL, "https://github.com/")
 	repoPath = strings.TrimSuffix(repoPath, ".git")
-
-	if private {
-		ref := ""
-		if tag, found := strings.CutPrefix(info.Origin.Ref, "refs/tags/"); found {
-			ref = tag
-		} else if branch, found := strings.CutPrefix(info.Origin.Ref, "refs/heads/"); found {
-			ref = branch
-		} else if info.Origin.Hash != "" {
-			ref = info.Origin.Hash
-		}
-		if ref == "" {
-			return ""
-		}
-		if f.Verbose {
-			fmt.Fprintf(os.Stderr, "Using GitHub API for private repo %s ref %s\n", repoPath, ref)
-		}
-		return fmt.Sprintf("https://api.github.com/repos/%s/zipball/%s", repoPath, ref)
-	}
 
 	if tag, found := strings.CutPrefix(info.Origin.Ref, "refs/tags/"); found {
 		if f.Verbose {
@@ -661,6 +645,31 @@ func moduleTagPrefix(modulePath string) string {
 	}
 
 	return suffix
+}
+
+// archiveToAPIURL converts a GitHub archive URL to a GitHub API zipball URL.
+// GitHub's archive endpoint (github.com) does not reliably support token-based auth,
+// but the API endpoint (api.github.com) does. Returns empty string for non-GitHub URLs.
+func archiveToAPIURL(archiveURL string) string {
+	if !strings.HasPrefix(archiveURL, "https://github.com/") || !strings.Contains(archiveURL, "/archive/") {
+		return ""
+	}
+	withoutPrefix := strings.TrimPrefix(archiveURL, "https://github.com/")
+	parts := strings.SplitN(withoutPrefix, "/archive/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	repoPath := parts[0]
+	rest := strings.TrimSuffix(parts[1], ".zip")
+
+	ref := rest
+	if tag, found := strings.CutPrefix(rest, "refs/tags/"); found {
+		ref = tag
+	} else if branch, found := strings.CutPrefix(rest, "refs/heads/"); found {
+		ref = branch
+	}
+
+	return fmt.Sprintf("https://api.github.com/repos/%s/zipball/%s", repoPath, ref)
 }
 
 // isMajorVersionSuffix reports whether s is a Go major version suffix (v2, v3, ...).

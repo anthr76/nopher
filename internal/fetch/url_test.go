@@ -22,12 +22,12 @@ func TestGetDownloadURL(t *testing.T) {
 			wantURL:    "https://proxy.golang.org/golang.org/x/mod/@v/v0.32.0.zip",
 		},
 		{
-			name:       "private module uses GitHub API",
+			name:       "private module uses archive URL for lockfile",
 			proxy:      "https://proxy.golang.org",
 			private:    "github.com/myorg/*",
 			modulePath: "github.com/myorg/private",
 			version:    "v1.0.0",
-			wantURL:    "https://api.github.com/repos/myorg/private/zipball/v1.0.0",
+			wantURL:    "https://github.com/myorg/private/archive/refs/tags/v1.0.0.zip",
 		},
 		{
 			name:       "no proxy uses direct",
@@ -150,6 +150,49 @@ func TestGitHubURLConstruction(t *testing.T) {
 			}
 			if tt.isBranch && !hasPrefix(tt.ref, "refs/heads/") {
 				t.Error("Branch ref should start with refs/heads/")
+			}
+		})
+	}
+}
+
+func TestArchiveToAPIURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		archiveURL string
+		wantURL    string
+	}{
+		{
+			name:       "tag URL",
+			archiveURL: "https://github.com/owner/repo/archive/refs/tags/v1.0.0.zip",
+			wantURL:    "https://api.github.com/repos/owner/repo/zipball/v1.0.0",
+		},
+		{
+			name:       "commit hash URL",
+			archiveURL: "https://github.com/owner/repo/archive/abc123def456.zip",
+			wantURL:    "https://api.github.com/repos/owner/repo/zipball/abc123def456",
+		},
+		{
+			name:       "branch URL",
+			archiveURL: "https://github.com/owner/repo/archive/refs/heads/main.zip",
+			wantURL:    "https://api.github.com/repos/owner/repo/zipball/main",
+		},
+		{
+			name:       "submodule tag URL",
+			archiveURL: "https://github.com/owner/repo/archive/refs/tags/api/v1alpha1/v1.0.0.zip",
+			wantURL:    "https://api.github.com/repos/owner/repo/zipball/api/v1alpha1/v1.0.0",
+		},
+		{
+			name:       "non-GitHub URL returns empty",
+			archiveURL: "https://proxy.golang.org/golang.org/x/mod/@v/v0.32.0.zip",
+			wantURL:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := archiveToAPIURL(tt.archiveURL)
+			if got != tt.wantURL {
+				t.Errorf("archiveToAPIURL(%q) = %q, want %q", tt.archiveURL, got, tt.wantURL)
 			}
 		})
 	}
