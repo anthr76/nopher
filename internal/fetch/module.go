@@ -191,7 +191,7 @@ func (f *Fetcher) Fetch(modulePath, version string) (*FetchResult, error) {
 		// Resolve full 40-char commit hash if missing or truncated.
 		// The Nix build requires a full rev for fetchGit in pure eval mode.
 		if len(gitRev) < 40 && info != nil && info.Origin != nil && info.Origin.URL != "" {
-			if resolved := resolveGitRev(info.Origin.URL+".git", info.Origin.Ref, gitRev); resolved != "" {
+			if resolved := f.resolveGitRev(info.Origin.URL, info.Origin.Ref, gitRev); resolved != "" {
 				gitRev = resolved
 			}
 		}
@@ -655,23 +655,63 @@ func moduleTagPrefix(modulePath string) string {
 	return suffix
 }
 
-// resolveGitRev resolves a git ref or short hash to a full 40-character commit hash
-// using git ls-remote. This is needed because the Nix build (fetchGit) requires a full
-// rev for reproducible builds in pure evaluation mode.
-func resolveGitRev(repoURL, ref, shortRev string) string {
+// resolveGitRev resolves a git ref or short hash to a full 40-character commit hash.
+// Uses git ls-remote for refs (tags/branches) and the GitHub API for short commit hashes.
+// The Nix build (fetchGit) requires a full rev for reproducible builds in pure eval mode.
+func (f *Fetcher) resolveGitRev(repoURL, ref, shortRev string) string {
+	gitURL := repoURL + ".git"
+
+	// For refs (tags, branches), use git ls-remote
 	if ref != "" {
 		// Try dereferenced tag first (annotated tags point to tag objects, not commits)
-		if output, err := exec.Command("git", "ls-remote", repoURL, ref+"^{}").Output(); err == nil {
+		if output, err := exec.Command("git", "ls-remote", gitURL, ref+"^{}").Output(); err == nil {
 			if fields := strings.Fields(strings.TrimSpace(string(output))); len(fields) >= 1 && len(fields[0]) == 40 {
 				return fields[0]
 			}
 		}
-		if output, err := exec.Command("git", "ls-remote", repoURL, ref).Output(); err == nil {
+		if output, err := exec.Command("git", "ls-remote", gitURL, ref).Output(); err == nil {
 			if fields := strings.Fields(strings.TrimSpace(string(output))); len(fields) >= 1 && len(fields[0]) == 40 {
 				return fields[0]
 			}
 		}
 	}
+
+	// For short commit hashes, use the GitHub API to resolve the full hash
+	if shortRev != "" && len(shortRev) < 40 && strings.HasPrefix(repoURL, "https://github.com/") {
+		repoPath := strings.TrimPrefix(repoURL, "https://github.com/")
+		repoPath = strings.TrimSuffix(repoPath, ".git")
+		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/commits/%s", repoPath, shortRev)
+
+		var client http.Client
+		host := "api.github.com"
+		if machine := f.Netrc.FindMachine(host, ""); machine != nil {
+			client.Transport = &authTransport{base: http.DefaultTransport, login: machine.Login, password: machine.Password}
+		} else if machine := f.Netrc.FindMachine("github.com", ""); machine != nil {
+			client.Transport = &authTransport{base: http.DefaultTransport, login: machine.Login, password: machine.Password}
+		}
+
+		req, err := http.NewRequest("GET", apiURL, nil)
+		if err != nil {
+			return ""
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return ""
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			var result struct {
+				SHA string `json:"sha"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && len(result.SHA) == 40 {
+				return result.SHA
+			}
+		}
+	}
+
 	return ""
 }
 
