@@ -64,11 +64,27 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parsing go.sum: %w", err)
 	}
 
-	// Build map for fast lookup
+	// Build map for fast lookup (zip entries from go.sum)
 	sumEntries := make(map[string]bool)
 	for _, entry := range sumEntriesList {
 		key := entry.Path + "@" + entry.Version
 		sumEntries[key] = true
+	}
+
+	// Also parse go.sum for /go.mod-only entries. Some indirect dependencies
+	// only have a /go.mod hash in go.sum (Go only needed their go.mod to
+	// resolve the dependency graph, not the full source). These modules still
+	// need to be vendored because Go's vendor mode requires all modules from
+	// go.mod to appear in vendor/modules.txt.
+	goModOnlyEntries, err := mod.ParseGoSumModOnly(goSumPath)
+	if err != nil {
+		return fmt.Errorf("parsing go.sum for go.mod entries: %w", err)
+	}
+	for _, entry := range goModOnlyEntries {
+		key := entry.Path + "@" + entry.Version
+		if !sumEntries[key] {
+			sumEntries[key] = true
+		}
 	}
 
 	if generateVerbose {

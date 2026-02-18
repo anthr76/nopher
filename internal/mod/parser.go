@@ -132,6 +132,67 @@ func ParseGoSum(path string) ([]SumEntry, error) {
 	return entries, nil
 }
 
+// ParseGoSumModOnly reads a go.sum file and returns entries that only have
+// /go.mod hashes (no corresponding zip hash). The returned entries have the
+// /go.mod suffix stripped from the version.
+func ParseGoSumModOnly(path string) ([]SumEntry, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening go.sum: %w", err)
+	}
+	defer f.Close()
+
+	zipVersions := make(map[string]bool)
+	type rawEntry struct {
+		path    string
+		version string // with /go.mod suffix stripped
+	}
+	var goModEntries []rawEntry
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) != 3 {
+			continue
+		}
+
+		modulePath := parts[0]
+		version := parts[1]
+
+		if strings.HasSuffix(version, "/go.mod") {
+			goModEntries = append(goModEntries, rawEntry{
+				path:    modulePath,
+				version: strings.TrimSuffix(version, "/go.mod"),
+			})
+		} else {
+			zipVersions[modulePath+"@"+version] = true
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scanning go.sum: %w", err)
+	}
+
+	// Return only entries that have a go.mod hash but no zip hash
+	var entries []SumEntry
+	for _, e := range goModEntries {
+		key := e.path + "@" + e.version
+		if !zipVersions[key] {
+			entries = append(entries, SumEntry{
+				Path:    e.path,
+				Version: e.version,
+			})
+		}
+	}
+
+	return entries, nil
+}
+
 // SumMap converts a slice of SumEntry to a map keyed by path@version.
 func SumMap(entries []SumEntry) map[string]string {
 	m := make(map[string]string)
