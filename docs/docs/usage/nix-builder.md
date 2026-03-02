@@ -45,12 +45,21 @@ buildNopherGoApp {
 | `GOOS` | string | `null` | Target operating system |
 | `GOARCH` | string | `null` | Target architecture |
 
+### Testing
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `doCheck` | bool | `true` | Run `go test ./...` after building |
+| `checkFlags` | list of strings | `[]` | Extra flags passed to `go test` |
+
 ### Hooks
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `preBuild` | string | `""` | Script to run before build |
 | `postBuild` | string | `""` | Script to run after build |
+| `preCheck` | string | `""` | Script to run before tests |
+| `postCheck` | string | `""` | Script to run after tests |
 | `preInstall` | string | `""` | Script to run before install |
 | `postInstall` | string | `""` | Script to run after install |
 
@@ -110,6 +119,34 @@ buildNopherGoApp {
   src = ./.;
   modules = ./nopher.lock.yaml;
   tags = [ "production" "postgres" ];
+}
+```
+
+### Disabling Tests
+
+Tests run by default. To skip them:
+
+```nix
+buildNopherGoApp {
+  pname = "myapp";
+  version = "1.0.0";
+  src = ./.;
+  modules = ./nopher.lock.yaml;
+  doCheck = false;
+}
+```
+
+### With Test Flags
+
+Pass extra flags to `go test`:
+
+```nix
+buildNopherGoApp {
+  pname = "myapp";
+  version = "1.0.0";
+  src = ./.;
+  modules = ./nopher.lock.yaml;
+  checkFlags = [ "-v" "-count=1" ];
 }
 ```
 

@@ -41,9 +41,14 @@ in
   CGO_ENABLED ? "0"
 , GOOS ? null
 , GOARCH ? null
+, # Testing
+  doCheck ? true
+, checkFlags ? [ ]
 , # Hooks
   preBuild ? ""
 , postBuild ? ""
+, preCheck ? ""
+, postCheck ? ""
 , preInstall ? ""
 , postInstall ? ""
 , # Extra attributes to pass to mkDerivation
@@ -219,15 +224,19 @@ let
     "CGO_ENABLED"
     "GOOS"
     "GOARCH"
+    "doCheck"
+    "checkFlags"
     "preBuild"
     "postBuild"
+    "preCheck"
+    "postCheck"
     "preInstall"
     "postInstall"
   ];
 
 in
 stdenv.mkDerivation (extraArgs // {
-  inherit pname version src;
+  inherit pname version src doCheck;
 
   nativeBuildInputs = [ goCompiler ] ++ (args.nativeBuildInputs or [ ]);
 
@@ -286,6 +295,20 @@ stdenv.mkDerivation (extraArgs // {
 
     ${postBuild}
     runHook postBuild
+  '';
+
+  checkPhase = ''
+    runHook preCheck
+    ${preCheck}
+
+    go test \
+      -mod=vendor \
+      ${lib.optionalString (tags != [ ]) "-tags '${lib.concatStringsSep "," tags}'"} \
+      ${lib.concatStringsSep " " checkFlags} \
+      ./...
+
+    ${postCheck}
+    runHook postCheck
   '';
 
   installPhase = ''

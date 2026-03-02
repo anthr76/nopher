@@ -1,20 +1,30 @@
 package fetch
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
+// requireNetwork skips the test when network access is unavailable (e.g. Nix sandbox).
+func requireNetwork(t *testing.T) {
+	t.Helper()
+	if os.Getenv("GOPROXY") == "off" {
+		t.Skip("skipping: requires network (GOPROXY=off)")
+	}
+}
+
 func TestGetModuleInfoFromGoList(t *testing.T) {
 	tests := []struct {
-		name       string
-		modulePath string
-		version    string
-		wantOrigin bool
-		wantRef    string
-		wantHash   string
-		wantVCS    string
-		wantURL    string
+		name        string
+		modulePath  string
+		version     string
+		wantOrigin  bool
+		wantRef     string
+		wantHash    string
+		wantVCS     string
+		wantURL     string
+		needNetwork bool
 	}{
 		{
 			name:       "pseudo-version extracts git hash",
@@ -35,12 +45,13 @@ func TestGetModuleInfoFromGoList(t *testing.T) {
 			wantURL:    "https://github.com/example/repo",
 		},
 		{
-			name:       "non-github module returns real origin from go list",
-			modulePath: "golang.org/x/mod",
-			version:    "v0.32.0",
-			wantOrigin: true, // go list returns real Origin data
-			wantVCS:    "git",
-			wantURL:    "https://go.googlesource.com/mod",
+			name:        "non-github module returns real origin from go list",
+			modulePath:  "golang.org/x/mod",
+			version:     "v0.32.0",
+			wantOrigin:  true,
+			wantVCS:     "git",
+			wantURL:     "https://go.googlesource.com/mod",
+			needNetwork: true,
 		},
 		{
 			name:       "github submodule creates origin with subpath prefix",
@@ -73,6 +84,10 @@ func TestGetModuleInfoFromGoList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.needNetwork {
+				requireNetwork(t)
+			}
+
 			f := &Fetcher{}
 			info, err := f.getModuleInfoFromGoList(tt.modulePath, tt.version)
 			if err != nil {
@@ -306,6 +321,8 @@ func TestURLEscaping(t *testing.T) {
 }
 
 func TestFullHashExtraction(t *testing.T) {
+	requireNetwork(t)
+
 	tests := []struct {
 		name         string
 		modulePath   string
