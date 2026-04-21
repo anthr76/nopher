@@ -1,6 +1,6 @@
 module github.com/anthr76/nopher
 
-go 1.26.2
+go 1.26.1
 
 require (
 	github.com/git-lfs/go-netrc v0.0.0-20250218165306-ba0029b43d11

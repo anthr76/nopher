@@ -13,21 +13,12 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        go_1_25_6 = pkgs.go_1_25.overrideAttrs (oldAttrs: rec {
-          version = "1.25.6";
-          src = pkgs.fetchurl {
-            url = "https://go.dev/dl/go${version}.src.tar.gz";
-            hash = "sha256-WMv3ceRNdt5vVtGeM7d9dFoeSJNAkih15GWFuXXCsFk=";
-          };
-        });
-
         nopher = import ./nix/default.nix {
           inherit pkgs;
-          go = go_1_25_6;
         };
 
         nopherCli = nopher.buildNopherGoApp {
-          go = go_1_25_6;
+          go = pkgs.go;
           pname = "nopher";
           version = "0.1.0";
           src = ./.;
@@ -69,6 +60,18 @@
         apps.default = {
           type = "app";
           program = "${nopherCli}/bin/nopher";
+        };
+
+        devShells.default = pkgs.mkShell {
+          packages = [
+            pkgs.go
+            pkgs.gopls
+            pkgs.gotools
+            pkgs.go-tools
+            pkgs.delve
+            nix-unit.packages.${system}.default
+            nopherCli
+          ];
         };
 
         overlays.default = import ./nix/overlay.nix;
