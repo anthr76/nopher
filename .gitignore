@@ -58,3 +58,6 @@ devenv.local.yaml
 **yarn-error.log**
 
 .idea/
+.history/
+
+*result*
