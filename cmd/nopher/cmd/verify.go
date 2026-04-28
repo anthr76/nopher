@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/anthr76/nopher/internal/lockfile"
 	"github.com/anthr76/nopher/internal/mod"
+	"github.com/anthr76/nopher/pkg/lockfile"
 	"github.com/spf13/cobra"
 )
 
