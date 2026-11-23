@@ -2,7 +2,6 @@ package fetch
 
 import (
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -118,28 +117,6 @@ func TestGetModuleInfoFromGoList(t *testing.T) {
 				if info.Origin != nil {
 					t.Error("Origin is non-nil, want nil")
 				}
-			}
-		})
-	}
-}
-
-func TestIsPseudoVersion(t *testing.T) {
-	tests := []struct {
-		version string
-		want    bool
-	}{
-		{"v0.0.0-20231201120000-abcdef123456", true},
-		{"v1.2.3", false},
-		{"v1.0.0-alpha.1", false},
-		{"v2.0.0+incompatible", false},
-		{"v0.0.0-20191109021931-daa7c04131f5", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			got := strings.HasPrefix(tt.version, "v0.0.0-")
-			if got != tt.want {
-				t.Errorf("isPseudoVersion(%q) = %v, want %v", tt.version, got, tt.want)
 			}
 		})
 	}

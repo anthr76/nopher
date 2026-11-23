@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/git-lfs/go-netrc/netrc"
+	"golang.org/x/mod/module"
 )
 
 const (
@@ -371,10 +372,8 @@ func (f *Fetcher) getModuleInfo(modulePath, version string) (*ModuleInfo, error)
 	return &info, nil
 }
 
-// getModuleInfoFromGoList extracts module metadata from the version string.
-// For pseudo-versions (v0.0.0-timestamp-hash), extracts the embedded git commit hash.
-// For tagged versions (v1.2.3), constructs the git tag ref (refs/tags/v1.2.3).
-// Returns nil for non-GitHub modules.
+// getModuleInfoFromGoList resolves module metadata with go list, falling back to
+// parsing GitHub module paths and versions when go list is unavailable or fails.
 func (f *Fetcher) getModuleInfoFromGoList(modulePath, version string) (*ModuleInfo, error) {
 	// Actually call `go list -m -json` to get accurate Origin data with full commit hash
 	cmd := exec.Command("go", "list", "-m", "-json", modulePath+"@"+version)
@@ -419,11 +418,8 @@ func (f *Fetcher) getModuleInfoManual(modulePath, version string) (*ModuleInfo, 
 				Subdir: tagPrefix,
 			}
 
-			if strings.HasPrefix(version, "v0.0.0-") {
-				idx := strings.LastIndex(version, "-")
-				if idx != -1 && idx < len(version)-1 {
-					info.Origin.Hash = version[idx+1:]
-				}
+			if rev, err := module.PseudoVersionRev(version); err == nil {
+				info.Origin.Hash = rev
 			} else {
 				tag := version
 				if tagPrefix != "" {

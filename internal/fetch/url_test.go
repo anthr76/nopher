@@ -197,3 +197,85 @@ func TestArchiveToAPIURL(t *testing.T) {
 		})
 	}
 }
+
+// Exercise the fallback used by private modules when go list is unavailable.
+func TestPrivateGitHubURLWithoutGo(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	tests := []struct {
+		name       string
+		modulePath string
+		version    string
+		wantURL    string
+	}{
+		{
+			name:       "no base version",
+			modulePath: "github.com/example/repo",
+			version:    "v0.0.0-20231201120000-abcdef123456",
+			wantURL:    "https://github.com/example/repo/archive/abcdef123456.zip",
+		},
+		{
+			name:       "released base version",
+			modulePath: "github.com/example/repo",
+			version:    "v1.1.2-0.20231201120000-abcdef123456",
+			wantURL:    "https://github.com/example/repo/archive/abcdef123456.zip",
+		},
+		{
+			name:       "prerelease base version",
+			modulePath: "github.com/example/repo",
+			version:    "v1.2.3-rc.1.0.20231201120000-abcdef123456",
+			wantURL:    "https://github.com/example/repo/archive/abcdef123456.zip",
+		},
+		{
+			name:       "incompatible pseudo-version",
+			modulePath: "github.com/example/repo",
+			version:    "v2.1.1-0.20231201120000-abcdef123456+incompatible",
+			wantURL:    "https://github.com/example/repo/archive/abcdef123456.zip",
+		},
+		{
+			name:       "major version without a base",
+			modulePath: "github.com/example/repo/v2",
+			version:    "v2.0.0-20231201120000-abcdef123456",
+			wantURL:    "https://github.com/example/repo/archive/abcdef123456.zip",
+		},
+		{
+			name:       "submodule pseudo-version",
+			modulePath: "github.com/example/repo/api/v2",
+			version:    "v2.1.1-0.20231201120000-abcdef123456",
+			wantURL:    "https://github.com/example/repo/archive/abcdef123456.zip",
+		},
+		{
+			name:       "release tag",
+			modulePath: "github.com/example/repo",
+			version:    "v1.2.3",
+			wantURL:    "https://github.com/example/repo/archive/refs/tags/v1.2.3.zip",
+		},
+		{
+			name:       "prerelease tag",
+			modulePath: "github.com/example/repo",
+			version:    "v1.2.3-rc.1",
+			wantURL:    "https://github.com/example/repo/archive/refs/tags/v1.2.3-rc.1.zip",
+		},
+		{
+			name:       "incompatible release tag",
+			modulePath: "github.com/example/repo",
+			version:    "v2.0.0+incompatible",
+			wantURL:    "https://github.com/example/repo/archive/refs/tags/v2.0.0+incompatible.zip",
+		},
+		{
+			name:       "submodule release tag",
+			modulePath: "github.com/example/repo/api/v2",
+			version:    "v2.1.1",
+			wantURL:    "https://github.com/example/repo/archive/refs/tags/api/v2.1.1.zip",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &Fetcher{Private: "github.com/*"}
+			if got := f.getDownloadURL(tt.modulePath, tt.version); got != tt.wantURL {
+				t.Errorf("getDownloadURL() = %q, want %q", got, tt.wantURL)
+			}
+		})
+	}
+}
